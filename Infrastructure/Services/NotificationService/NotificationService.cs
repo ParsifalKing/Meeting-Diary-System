@@ -9,6 +9,7 @@ using Infrastructure.Services.EmailService;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MimeKit.Text;
+using Org.BouncyCastle.Math.EC.Rfc7748;
 
 namespace Infrastructure.Services.NotificationService;
 
@@ -136,12 +137,13 @@ public class NotificationService(ILogger<NotificationService> logger, DataContex
         try
         {
             logger.LogInformation("Starting method SendNotificationAsync in time {DateTime}", DateTime.UtcNow);
-            var meetings = await context.Meetings.Where(m => (m.StartDate - DateTime.UtcNow) > (DateTime.UtcNow.AddDays(3) - DateTime.UtcNow)).ToListAsync();
-            string meetingsString = "";
-            foreach (var meeting in meetings)
+            var meeting = await context.Meetings.Where(m => m.StartDate > DateTime.UtcNow && userId == m.UserId).OrderBy(x => x.StartDate).FirstOrDefaultAsync();
+
+            if (meeting == null)
             {
-                meetingsString = meetingsString + meeting.Name + " " + meeting.Description + "StartDate " + meeting.StartDate + "EndDate " + meeting.EndDate;
+                logger.LogWarning("Meetings not found at time : {DateTime}", DateTime.UtcNow);
             }
+            var meetingString = $" Meeting name : {meeting!.Name} \nMeeting description : {meeting.Description} \nMeeting start date : {meeting.StartDate} \nMeeting end date : {meeting.EndDate}";
 
             var user = await context.Users.FirstOrDefaultAsync(x => x.Id == userId);
             if (user == null)
@@ -149,8 +151,8 @@ public class NotificationService(ILogger<NotificationService> logger, DataContex
                 logger.LogWarning("User with id {UserId} not found , time={DateTimeNow}", userId, DateTimeOffset.UtcNow);
                 return new PagedResponse<string>(HttpStatusCode.BadRequest, "User not found");
             }
-            await emailService.SendEmail(new EmailMessageDto(new[] { user.Email }, "All notification for user meetings up to 3 days",
-                $"<h1>{meetingsString}</h1>"), TextFormat.Html);
+            await emailService.SendEmail(new EmailMessageDto(new[] { user.Email }, "All information for first user meeting",
+                $"<h1>{meetingString}</h1>"), TextFormat.Html);
 
             logger.LogInformation("Finished method SendNotificationAsync in time {DateTime}", DateTime.UtcNow);
             return new Response<string>("Notification Successfully sent!!! ");
